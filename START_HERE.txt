@@ -1,0 +1,34 @@
+PAYMENT SETTLEMENT RECONCILIATION ENGINE — QUICK START
+
+Read README.md for the complete setup, rule definitions, and limitations.
+
+UPDATED FIXTURE
+- 1,000 internal orders
+- 908 gateway records
+- 64 bank entries
+- 44 ground-truth exceptions across 12 categories
+
+IMPORTANT DATABASE SAFETY
+- PGDATABASE is required; the scripts do not fall back to PaymentReconDB.
+- Create a NEW, EMPTY database named PaymentReconFinalTestDB for this fixture.
+- Keep existing PaymentReconDB and PaymentReconTestDB unchanged.
+- The loader refuses to load into non-empty target tables.
+- Set PGDATABASE explicitly in PowerShell before running either database script.
+
+POWERSHELL SETUP
+$env:PGHOST = "localhost"
+$env:PGPORT = "5432"
+$env:PGDATABASE = "PaymentReconFinalTestDB"
+$env:PGUSER = "payment_recon_app"
+
+RUN IN THIS ORDER
+1. In pgAdmin connected to PaymentReconFinalTestDB, execute sql/01_create_tables.sql.
+2. If using a separate application role, review sql/04_grant_permissions_example.sql.
+3. In the project root, run: python src/load_csvs_to_postgres.py
+4. In pgAdmin, execute sql/02_reconciliation_exceptions_view.sql.
+5. Execute sql/03_ground_truth_validation.sql in pgAdmin.
+6. Run: python src/run_reconciliation.py
+7. Run: python -m unittest discover -s tests -v
+8. Run: python -m compileall -q src tests
+
+The SQL view uses a fixed as-of date of 2026-10-26. The data is synthetic; review the output and limitations in README.md.
