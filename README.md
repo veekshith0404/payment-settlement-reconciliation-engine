@@ -125,6 +125,8 @@ Use a **new, empty database** for this fixture. The CSV loader intentionally ref
 
 3. Open pgAdmin's Query Tool connected specifically to `PaymentReconFinalTestDB` as the database owner or administrator. Execute the complete `sql/01_create_tables.sql` script and confirm the four project tables exist.
 
+   The schema requires `capture_timestamp_utc` for gateway rows whose `auth_status` is `CAPTURED`. Non-captured rows may have a null capture timestamp. This database constraint rejects captured rows without timestamps, preventing settlement-deadline rules from silently operating on an unknown capture time.
+
 4. If using the separate application role, execute `sql/04_grant_permissions_example.sql` while connected to `PaymentReconFinalTestDB` as the database owner or administrator. This grants the role access needed to load and read the project tables. Review the example before executing it; grant only the permissions the chosen role needs.
 
 5. In your VS Code PowerShell terminal, set the connection variables. For the application-role option:

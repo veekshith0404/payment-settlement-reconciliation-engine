@@ -244,7 +244,8 @@ bank_settlement_amount_mismatches AS (
 ),
 
 -- Report each non-credited bank entry separately instead of mislabelling the
--- same payout batch as a missing settlement.
+-- same payout batch as a missing settlement. The amount under review is the
+-- individual bank entry amount, not the full expected payout for its batch.
 non_credited_bank_entries AS (
     SELECT
         'NON_CREDITED_BANK_ENTRY'::TEXT AS defect_type,
@@ -252,7 +253,7 @@ non_credited_bank_entries AS (
         COALESCE(gb.expected_payout, b.credit_amount)::NUMERIC AS expected_amount,
         b.credit_amount::NUMERIC AS actual_amount,
         (b.credit_amount - COALESCE(gb.expected_payout, b.credit_amount))::NUMERIC AS variance_amount,
-        COALESCE(gb.expected_payout, b.credit_amount)::NUMERIC AS amount_under_review,
+        b.credit_amount::NUMERIC AS amount_under_review,
         ('Bank entry has status ' || COALESCE(b.bank_status, 'NULL') || ', not CREDITED.')::TEXT AS reason
     FROM public.bank_statement AS b
     LEFT JOIN gateway_batches AS gb

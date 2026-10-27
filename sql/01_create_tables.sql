@@ -1,6 +1,13 @@
--- 01_create_tables.sql
--- Create the tables used by the reconciliation project.
--- Existing tables are not dropped or modified.
+-- ============================================================
+-- PAYMENT SETTLEMENT RECONCILIATION ENGINE
+-- 01_create_tables.sql | PostgreSQL 18
+--
+-- Run in the intended dedicated project database.
+-- Safe for setup: uses CREATE TABLE IF NOT EXISTS and never drops objects.
+-- The script also adds a check constraint requiring a timestamp for CAPTURED
+-- gateway rows. Existing data that violates the constraint must be corrected.
+-- Existing table columns are not altered.
+-- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.internal_orders (
     order_id VARCHAR(32) PRIMARY KEY,
@@ -26,6 +33,27 @@ CREATE TABLE IF NOT EXISTS public.gateway_statement (
     net_payout NUMERIC(12, 2) NOT NULL,
     payout_batch_id VARCHAR(40) NOT NULL
 );
+
+-- A captured gateway transaction must have a capture timestamp because
+-- settlement deadlines are derived from this timestamp. Non-captured rows may
+-- legitimately have a NULL capture timestamp.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_gateway_captured_timestamp_present'
+          AND conrelid = 'public.gateway_statement'::regclass
+    ) THEN
+        ALTER TABLE public.gateway_statement
+        ADD CONSTRAINT chk_gateway_captured_timestamp_present
+        CHECK (
+            auth_status <> 'CAPTURED'
+            OR capture_timestamp_utc IS NOT NULL
+        );
+    END IF;
+END;
+$$;
 
 CREATE TABLE IF NOT EXISTS public.bank_statement (
     bank_entry_id VARCHAR(60) PRIMARY KEY,
