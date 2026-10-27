@@ -56,7 +56,7 @@ orphan_gateway_records AS (
       )
 ),
 
--- An internal order marked FAILED even though the gateway captured payment.
+-- An internal order marked FAILED or DROPPED even though the gateway captured payment.
 internal_gateway_status_mismatches AS (
     SELECT
         'INTERNAL_GATEWAY_STATUS_MISMATCH'::TEXT AS defect_type,

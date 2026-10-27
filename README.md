@@ -48,11 +48,11 @@ payment-settlement-reconciliation-engine/
 ├── config/
 │   └── .env.example
 ├── data/
-│   ├── baseline/                 # Clean synthetic baseline CSV files
-│   ├── raw/                      # Injected fixture used by the pipeline
+│   ├── baseline/                  # Clean synthetic baseline CSV files
+│   ├── raw/                       # Injected fixture used by the pipeline
 │   └── test/
 │       └── ground_truth_exceptions.csv
-├── reports/                      # Generated XLSX and CSV output
+├── reports/                       # Generated XLSX and CSV output
 ├── sql/
 │   ├── 00_initial_profiling.sql
 │   ├── 01_create_tables.sql
@@ -82,10 +82,10 @@ payment-settlement-reconciliation-engine/
 - PostgreSQL 18 or a compatible PostgreSQL version
 - pgAdmin or another PostgreSQL client
 
-Install the dependencies into a virtual environment. From the project root:
+Install the dependencies into a virtual environment. From the project root, first confirm that the Python launcher selects Python 3.11 or newer (`py -0p` lists installed interpreters):
 
 ```powershell
-py -3.11 -m venv .venv
+py -3 -m venv .venv
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -99,10 +99,10 @@ The scripts read PostgreSQL connection settings from environment variables:
 - `PGHOST` — host name, usually `localhost`
 - `PGPORT` — port, usually `5432`
 - `PGDATABASE` — **required** database name; there is no default database
-- `PGUSER` — database role, defaulting to `postgres` if not set
+- `PGUSER` — database role; defaults to `postgres` if not set
 - `PGPASSWORD` — optional; the scripts prompt for a password when this variable is not set
 
-`config/.env.example` is a reference template. The scripts do **not** load it automatically. In PowerShell, set values for the current terminal session explicitly. Use a brand-new, empty database for this updated fixture; the example below uses `PaymentReconFinalTestDB`:
+`config/.env.example` is a reference template. The scripts do **not** load it automatically. Set the environment variables in your PowerShell session. The example below uses a dedicated database named `PaymentReconFinalTestDB` and the application role `payment_recon_app`:
 
 ```powershell
 $env:PGHOST = "localhost"
@@ -115,29 +115,57 @@ Before running either Python database script, verify that `PGDATABASE` names the
 
 ## Setup in a fresh, empty database
 
-**Do not load the updated fixture into an existing project database.** The loader checks that all target tables are empty and intentionally refuses to load into populated tables. The updated schema adds constraints and the updated fixture adds two test cases. Create a new empty database so the new schema is applied from scratch. Keep `PaymentReconDB` and your existing `PaymentReconTestDB` unchanged.
+Use a **new, empty database** for this fixture. The CSV loader intentionally refuses to load into populated project tables.
 
-1. In pgAdmin, create a new empty database named `PaymentReconFinalTestDB` (or choose another name and set `PGDATABASE` to match it).
-2. Connect pgAdmin's Query Tool specifically to that new database.
-3. Execute the complete `sql/01_create_tables.sql` script and confirm the four project tables exist.
-4. If you use a separate application role, execute the relevant permission examples in `sql/04_grant_permissions_example.sql` as the database owner or administrator. If the application role owns the database objects, extra grants may not be needed.
-5. Set `PGHOST`, `PGPORT`, `PGDATABASE`, and `PGUSER` in the PowerShell session as described above.
-6. From the project root with the virtual environment active, run:
+1. In pgAdmin, create an empty database named `PaymentReconFinalTestDB` (or choose another name and set `PGDATABASE` to match it).
+
+2. Choose how to connect:
+   - **Local demonstration with an administrator account:** use your local PostgreSQL administrator role for the database setup and the Python scripts. Set `PGUSER` to that role.
+   - **Separate application role:** create a login role named `payment_recon_app` in pgAdmin under **Login/Group Roles**. Set a strong password and enable login. If the role already exists, do not create it again. Use this role for the Python scripts and grant it the required permissions in the steps below.
+
+3. Open pgAdmin's Query Tool connected specifically to `PaymentReconFinalTestDB` as the database owner or administrator. Execute the complete `sql/01_create_tables.sql` script and confirm the four project tables exist.
+
+4. If using the separate application role, execute `sql/04_grant_permissions_example.sql` while connected to `PaymentReconFinalTestDB` as the database owner or administrator. This grants the role access needed to load and read the project tables. Review the example before executing it; grant only the permissions the chosen role needs.
+
+5. In your VS Code PowerShell terminal, set the connection variables. For the application-role option:
+
+   ```powershell
+   $env:PGHOST = "localhost"
+   $env:PGPORT = "5432"
+   $env:PGDATABASE = "PaymentReconFinalTestDB"
+   $env:PGUSER = "payment_recon_app"
+   ```
+
+   For the administrator option, set `PGUSER` to your administrator role instead. Enter the configured role's password when prompted. Do not put passwords in source files or commit them to Git.
+
+6. From the project root with the virtual environment active, load the CSV data:
 
    ```powershell
    python src/load_csvs_to_postgres.py
    ```
 
-   Enter the configured role's password when prompted. The expected loaded row counts are 1,000 internal orders, 908 gateway records, 64 bank entries, and 44 ground-truth exceptions.
-7. Execute `sql/02_reconciliation_exceptions_view.sql` in pgAdmin while connected to the same database. This recreates the read-only detection view. The settlement deadline uses the fixed as-of date `2026-10-26` so the September 2026 fixture is reproducible. Change this constant deliberately if you want to model a different evaluation date.
-8. Run the statements in `sql/03_ground_truth_validation.sql` to compare detections with the independent ground-truth answer key.
-9. Run the Python reporting pipeline:
+   Expected row counts are 1,000 internal orders, 908 gateway records, 64 bank entries, and 44 ground-truth exceptions. Run the loader only against the new, empty database; it will refuse to load into populated tables.
 
-   ```powershell
-   python src/run_reconciliation.py
+7. In pgAdmin, execute `sql/02_reconciliation_exceptions_view.sql` while connected to the same database. This creates the detection view. The settlement deadline uses the fixed evaluation date `2026-10-26` so the September 2026 fixture is reproducible. Change this date deliberately if you want to model a different evaluation date.
+
+8. If the view was created by an administrator and you are using a separate application role, grant the application role permission to read the view. Run this statement in pgAdmin while connected to `PaymentReconFinalTestDB` as the view owner or administrator:
+
+   ```sql
+   GRANT SELECT ON public.reconciliation_exceptions
+   TO payment_recon_app;
    ```
 
-10. Review the validation summary and generated reports under `reports/`. The fixture is designed for all 44 injected exceptions to match; treat the run's actual result, not this design goal, as the evidence of what your current database detected.
+   Skip this grant if you are running the reporting script as the same role that owns the view, or change the role name to match your configuration.
+
+9. Execute `sql/03_ground_truth_validation.sql` in pgAdmin to compare detections with the independent ground-truth answer key.
+
+10. Run the Python reporting pipeline from the project root:
+
+    ```powershell
+    python src/run_reconciliation.py
+    ```
+
+11. Review the validation summary and generated reports under `reports/`. The fixture is designed for all 44 injected exceptions to match; treat the actual validation output, not the design goal, as evidence of what your database detected.
 
 `sql/00_initial_profiling.sql` contains optional read-only profiling queries.
 
@@ -150,13 +178,13 @@ python -m unittest discover -s tests -v
 python -m compileall -q src tests
 ```
 
-The tests cover validation metrics, duplicate keys, null amounts, database-target safety, two injected edge cases, Excel sheet-name constraints, and currency formatting. They do not execute the PostgreSQL view. Run the SQL scripts and reporting pipeline against the dedicated new database to validate PostgreSQL behaviour end to end.
+The tests cover validation metrics, duplicate keys, null amounts, database-target safety, two injected edge cases, Excel sheet-name constraints, and currency formatting. They do not execute the PostgreSQL view. Run the SQL scripts and reporting pipeline against the dedicated database to validate PostgreSQL behaviour end to end.
 
 ## What the reconciliation view checks
 
 The view returns a standard exception schema with category, entity identifier, expected/actual values where applicable, variance, amount under review, and a reason.
 
-- **Missing gateway record:** an internally successful order has no matching **captured** gateway transaction. A non-captured row alone does not satisfy this rule.
+- **Missing gateway record:** an internally successful order has no matching captured gateway transaction. A non-captured row alone does not satisfy this rule.
 - **Orphan gateway record:** a captured gateway transaction has no matching internal order.
 - **Internal/gateway status mismatch:** the internal order is `FAILED` or `DROPPED` while the gateway transaction is `CAPTURED`.
 - **Order/gateway amount mismatch:** the gateway gross amount differs from the internal order amount by at least ₹0.01.
@@ -186,4 +214,4 @@ This is a deterministic, synthetic portfolio fixture, not a production payment p
 - `reports/reconciliation_exceptions.csv` — detected exceptions
 - `reports/validation_detail.csv` — identifier and amount validation details
 
-The report files are generated outputs and are excluded from Git by `.gitignore`. A fresh run should generate the current results after the database fixture and view have been updated.
+The report files are generated outputs and are excluded from Git by `.gitignore`. A fresh run should generate the current results after the database fixture and view have been set up.

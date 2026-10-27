@@ -1,34 +1,81 @@
-PAYMENT SETTLEMENT RECONCILIATION ENGINE — QUICK START
+START HERE — PAYMENT SETTLEMENT RECONCILIATION ENGINE
 
-Read README.md for the complete setup, rule definitions, and limitations.
+This project reconciles internal payment orders, gateway transactions, and bank settlement entries using PostgreSQL, Python, pandas, and Excel.
 
-UPDATED FIXTURE
-- 1,000 internal orders
-- 908 gateway records
-- 64 bank entries
-- 44 ground-truth exceptions across 12 categories
+SYNTHETIC FIXTURE
+- Internal orders: 1,000
+- Gateway records: 908
+- Bank entries: 64
+- Ground-truth exceptions: 44 across 12 categories
 
-IMPORTANT DATABASE SAFETY
-- PGDATABASE is required; the scripts do not fall back to PaymentReconDB.
-- Create a NEW, EMPTY database named PaymentReconFinalTestDB for this fixture.
-- Keep existing PaymentReconDB and PaymentReconTestDB unchanged.
-- The loader refuses to load into non-empty target tables.
-- Set PGDATABASE explicitly in PowerShell before running either database script.
+The fixture is designed to exercise known exception scenarios. Results on this synthetic dataset do not establish accuracy on every real-world payment dataset. Read README.md for the full project description, reconciliation rules, assumptions, and limitations.
 
-POWERSHELL SETUP
-$env:PGHOST = "localhost"
-$env:PGPORT = "5432"
-$env:PGDATABASE = "PaymentReconFinalTestDB"
-$env:PGUSER = "payment_recon_app"
+QUICK START — FRESH DATABASE
 
-RUN IN THIS ORDER
-1. In pgAdmin connected to PaymentReconFinalTestDB, execute sql/01_create_tables.sql.
-2. If using a separate application role, review sql/04_grant_permissions_example.sql.
-3. In the project root, run: python src/load_csvs_to_postgres.py
-4. In pgAdmin, execute sql/02_reconciliation_exceptions_view.sql.
-5. Execute sql/03_ground_truth_validation.sql in pgAdmin.
-6. Run: python src/run_reconciliation.py
-7. Run: python -m unittest discover -s tests -v
-8. Run: python -m compileall -q src tests
+1. Review the complete setup instructions in README.md before starting. Use a NEW, EMPTY PostgreSQL database for the fixture. The CSV loader refuses to load into populated project tables.
 
-The SQL view uses a fixed as-of date of 2026-10-26. The data is synthetic; review the output and limitations in README.md.
+2. From the project root, create and activate a virtual environment, then install dependencies. The commands below use PowerShell:
+
+   py -3 -m venv .venv
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+   .\.venv\Scripts\Activate.ps1
+   python -m pip install --upgrade pip
+   pip install -r requirements.txt
+
+3. In pgAdmin, create an empty database (for example, PaymentReconFinalTestDB) and open Query Tool connected specifically to that database.
+
+4. Choose your database role:
+   - For a local demonstration, you may use your PostgreSQL administrator account.
+   - For a separate application role, create a login role named payment_recon_app in pgAdmin's Login/Group Roles interface and set a strong password. Do not put the password in this file or commit it to Git.
+
+5. As the database owner or administrator, execute these scripts in order:
+   a. sql/01_create_tables.sql
+   b. If using payment_recon_app, sql/04_grant_permissions_example.sql
+
+6. In the same PowerShell session where you will run the Python scripts, set the connection variables. Change the database or role if you chose different names:
+
+   $env:PGHOST = "localhost"
+   $env:PGPORT = "5432"
+   $env:PGDATABASE = "PaymentReconFinalTestDB"
+   $env:PGUSER = "payment_recon_app"
+
+   If using an administrator account, set PGUSER to that role instead. config/.env.example is a reference template only; the scripts do not load it automatically. The scripts prompt for a password if PGPASSWORD is not set.
+
+7. From the project root, load the CSV data:
+
+   python src/load_csvs_to_postgres.py
+
+   Expected row counts: 1,000 internal orders, 908 gateway records, 64 bank entries, and 44 ground-truth exceptions. Run the loader only against the new, empty database.
+
+8. In pgAdmin, still connected to that database, execute sql/02_reconciliation_exceptions_view.sql to create the detection view.
+
+9. If the view was created by an administrator and the Python reporting script uses a different application role, run the following statement in pgAdmin as the view owner or an administrator:
+
+   GRANT SELECT ON public.reconciliation_exceptions
+   TO payment_recon_app;
+
+   Skip this grant if the reporting script uses the same role that owns the view. Replace the role name if necessary.
+
+10. Execute sql/03_ground_truth_validation.sql in pgAdmin to compare detected exceptions with the independent synthetic answer key.
+
+11. Run the Python reporting pipeline:
+
+   python src/run_reconciliation.py
+
+   Review the validation results and generated Excel/CSV files under reports/.
+
+RUN THE AUTOMATED CHECKS
+
+From the project root with the virtual environment activated:
+
+   python -m unittest discover -s tests -v
+   python -m compileall -q src tests
+
+The unit tests do not execute the PostgreSQL view. Follow the README setup and run the SQL/reporting pipeline to verify PostgreSQL behavior end to end.
+
+SECURITY NOTES
+- PGDATABASE is required; the scripts do not silently default to a database.
+- Confirm the printed host, port, database, and user before proceeding with a database script.
+- Never commit real passwords or credentials.
+- Keep the baseline CSVs separate from the injected raw fixture.
+- The ground-truth answer key is used for evaluation; the detection view does not read it.
